@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>献立共有アプリ</title>
+  <style>
+    body { font-family: sans-serif; padding: 1em; }
+    .tab { display: inline-block; margin: 0 1em; padding: 0.5em 1em; background: #eee; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; }
+    .tab.active { background: #4285f4; color: #fff; border-color: #4285f4; }
+    .section { margin-top: 1em; display: none; }
+    .section.active { display: block; }
+  </style>
+</head>
+<body>
+
+<h1>献立共有アプリ</h1>
+
+<div>
+  <span class="tab active" data-tab="main">主菜</span>
+  <span class="tab" data-tab="side">副菜</span>
+  <span class="tab" data-tab="soup">汁物</span>
+</div>
+<div id="main" class="section active"><ul id="mainList"></ul></div>
+<div id="side" class="section"><ul id="sideList"></ul></div>
+<div id="soup" class="section"><ul id="soupList"></ul></div>
+
+<h3>新規レシピ</h3>
+<select id="category"><option value="main">主菜</option><option value="side">副菜</option><option value="soup">汁物</option></select>
+<input id="dishName" placeholder="料理名">
+<input id="ingredients" placeholder="食材（カンマ区切り）">
+<button onclick="addRecipe()">追加</button>
+
+<h3>献立生成</h3>
+<button onclick="generatePlan(3)">3日間</button>
+<button onclick="generatePlan(7)">1週間</button>
+<div id="generatedPlan"></div>
+
+<h3>買い物リスト</h3>
+<ul id="shoppingList"></ul>
+<button onclick="restoreItems()">復元</button>
+
+<script>
+let mainDishes = [{ name: "鶏の照り焼き", ingredients: ["鶏もも肉", "しょうゆ", "みりん"] }, { name: "ハンバーグ", ingredients: ["合いびき肉", "玉ねぎ", "パン粉"] }];
+let sideDishes = [{ name: "ほうれん草のおひたし", ingredients: ["ほうれん草", "しょうゆ"] }];
+let soupDishes = [{ name: "味噌汁", ingredients: ["味噌", "豆腐", "わかめ"] }];
+let shoppingList = new Set();
+let deletedItems = [];
+
+function addRecipe() {
+  const cat = document.getElementById('category').value;
+  const name = document.getElementById('dishName').value.trim();
+  const ing = document.getElementById('ingredients').value.split(',').map(i => i.trim()).filter(i => i);
+  if (!name || ing.length === 0) return;
+  if (cat === 'main') mainDishes.push({ name, ingredients: ing });
+  if (cat === 'side') sideDishes.push({ name, ingredients: ing });
+  if (cat === 'soup') soupDishes.push({ name, ingredients: ing });
+  renderRecipes(cat);
+}
+
+function renderRecipes(cat) {
+  const lists = { main: mainDishes, side: sideDishes, soup: soupDishes };
+  const listEl = document.getElementById(cat + 'List');
+  listEl.innerHTML = '';
+  lists[cat].forEach((d, i) => {
+    const li = document.createElement('li');
+    li.textContent = `${d.name} - ${d.ingredients.join(', ')}`;
+    const edit = document.createElement('button');
+    edit.textContent = '✏️';
+    edit.onclick = () => {
+      const newName = prompt('新しい名前', d.name);
+      const newIngredients = prompt('新しい食材（カンマ区切り）', d.ingredients.join(', '));
+      if (newName && newIngredients) {
+        d.name = newName.trim();
+        d.ingredients = newIngredients.split(',').map(x => x.trim()).filter(x => x);
+        renderRecipes(cat);
+      }
+    };
+    const del = document.createElement('button');
+    del.textContent = '🗑️';
+    del.onclick = () => {
+      lists[cat].splice(i, 1);
+      renderRecipes(cat);
+    };
+    li.appendChild(edit);
+    li.appendChild(del);
+    listEl.appendChild(li);
+  });
+}
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.tab).classList.add('active');
+    renderRecipes(tab.dataset.tab);
+  };
+});
+
+function generatePlan(days) {
+  const out = document.getElementById('generatedPlan');
+  out.innerHTML = '';
+  shoppingList.clear();
+  deletedItems = [];
+  for (let i = 0; i < days; i++) {
+    const m = mainDishes[Math.floor(Math.random() * mainDishes.length)];
+    const div = document.createElement('div');
+    div.innerHTML = `<b>${i + 1}日目:</b> ${m.name}`;
+    m.ingredients.forEach(i => shoppingList.add(i));
+
+    const s = document.createElement('select');
+    s.innerHTML = `<option>副菜を追加</option>`;
+    sideDishes.forEach(sd => { let o = document.createElement('option'); o.textContent = sd.name; s.appendChild(o); });
+    s.onchange = () => {
+      if (s.value !== '副菜を追加') {
+        const f = sideDishes.find(x => x.name === s.value);
+        f.ingredients.forEach(i => shoppingList.add(i));
+        renderShopping();
+      }
+    };
+
+    const so = document.createElement('select');
+    so.innerHTML = `<option>汁物を追加</option>`;
+    soupDishes.forEach(sd => { let o = document.createElement('option'); o.textContent = sd.name; so.appendChild(o); });
+    so.onchange = () => {
+      if (so.value !== '汁物を追加') {
+        const f = soupDishes.find(x => x.name === so.value);
+        f.ingredients.forEach(i => shoppingList.add(i));
+        renderShopping();
+      }
+    };
+
+    div.appendChild(s);
+    div.appendChild(so);
+    out.appendChild(div);
+  }
+  renderShopping();
+}
+
+function renderShopping() {
+  const list = document.getElementById('shoppingList');
+  list.innerHTML = '';
+  shoppingList.forEach(i => {
+    const li = document.createElement('li');
+    li.textContent = i + ' ';
+    const btn = document.createElement('button');
+    btn.textContent = '🗑️';
+    btn.onclick = () => {
+      shoppingList.delete(i);
+      deletedItems.push(i);
+      renderShopping();
+    };
+    li.appendChild(btn);
+    list.appendChild(li);
+  });
+}
+
+function restoreItems() {
+  deletedItems.forEach(i => shoppingList.add(i));
+  deletedItems = [];
+  renderShopping();
+}
+
+renderRecipes('main');
+</script>
+
+</body>
+</html>
